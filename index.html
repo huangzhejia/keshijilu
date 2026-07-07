@@ -55,10 +55,9 @@
             background-color: #198754;
             color: white;
         }
-        /* 针对大班级优化的网格布局 */
         .student-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
             gap: 15px;
             margin-top: 20px;
         }
@@ -72,14 +71,19 @@
             user-select: none;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             transition: all 0.2s ease-in-out;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
         }
         .student-card:active {
-            transform: scale(0.95);
+            transform: scale(0.98);
         }
-        .student-card.checked {
-            background-color: #d1e7dd;
-            border-color: #a3cfbb;
-            pointer-events: none; /* 今天已点名，禁止重复点击 */
+        /* 今天有课的卡片样式 */
+        .student-card.has-class-today {
+            background-color: #f0fdf4;
+            border-color: #86efac;
         }
         .student-name {
             font-size: 18px;
@@ -87,11 +91,27 @@
             margin-bottom: 5px;
         }
         .student-count {
-            font-size: 12px;
+            font-size: 13px;
             color: #6c757d;
+            margin-bottom: 5px;
         }
-        .student-card.checked .student-count {
-            color: #0f5132;
+        .today-info {
+            font-size: 13px;
+            font-weight: bold;
+            color: #15803d;
+            margin-bottom: 8px;
+        }
+        /* 撤回按钮的样式 */
+        .btn-undo {
+            background-color: #ef4444;
+            color: white;
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-weight: normal;
+        }
+        .btn-undo:hover {
+            background-color: #dc2626;
         }
     </style>
 </head>
@@ -108,23 +128,20 @@
     </div>
 
     <div class="student-grid" id="studentGrid">
-        </div>
+        <!-- 学生卡片动态生成 -->
+    </div>
 
     <script>
-        // 核心数据结构: [{ id: 1, name: "张三", dates: ["2023/10/25", "2023/10/26"] }]
         let students = JSON.parse(localStorage.getItem('pe_class_data')) || [];
 
-        // 获取今天的日期 (格式: YYYY/M/D)
         function getTodayString() {
             return new Date().toLocaleDateString('zh-CN');
         }
 
-        // 保存数据到浏览器本地
         function saveData() {
             localStorage.setItem('pe_class_data', JSON.stringify(students));
         }
 
-        // 添加学生
         function addStudent() {
             const input = document.getElementById('studentName');
             const name = input.value.trim();
@@ -134,16 +151,15 @@
                 return;
             }
 
-            // 检查是否重名
             if (students.some(s => s.name === name)) {
                 alert("该学生已存在！");
                 return;
             }
 
             students.push({
-                id: Date.now(), // 用时间戳作为唯一ID
+                id: Date.now(),
                 name: name,
-                dates: [] // 记录上课日期的数组
+                dates: []
             });
 
             input.value = '';
@@ -151,23 +167,39 @@
             renderGrid();
         }
 
-        // 支持回车键添加
         function handleKeyPress(e) {
             if (e.key === 'Enter') {
                 addStudent();
             }
         }
 
-        // 记录课时 (点击卡片触发)
+        // 记录课时 (+1)
         function recordClass(id) {
             const student = students.find(s => s.id === id);
             if (!student) return;
 
             const today = getTodayString();
+            // 不再限制同一天，直接push
+            student.dates.push(today);
+            saveData();
+            renderGrid();
+        }
+
+        // 撤回今天的最后一节课 (-1)
+        function undoClass(id, event) {
+            // 阻止事件冒泡，防止点击撤回时触发了卡片的+1事件
+            event.stopPropagation(); 
             
-            // 防止同一天重复记录
-            if (!student.dates.includes(today)) {
-                student.dates.push(today);
+            const student = students.find(s => s.id === id);
+            if (!student) return;
+
+            const today = getTodayString();
+            // 找到今天记录中最后一次出现的索引
+            const lastIndex = student.dates.lastIndexOf(today);
+            
+            if (lastIndex !== -1) {
+                // 删除那一条记录
+                student.dates.splice(lastIndex, 1);
                 saveData();
                 renderGrid();
             }
@@ -182,39 +214,48 @@
 
             students.forEach(student => {
                 const card = document.createElement('div');
-                const isCheckedToday = student.dates.includes(today);
                 
-                card.className = `student-card ${isCheckedToday ? 'checked' : ''}`;
-                // 如果今天没打卡，才绑定点击事件
-                if (!isCheckedToday) {
-                    card.onclick = () => recordClass(student.id);
+                // 统计今天该生上了几次课
+                const todayCount = student.dates.filter(date => date === today).length;
+                
+                card.className = `student-card ${todayCount > 0 ? 'has-class-today' : ''}`;
+                // 点击整个卡片即刻记录一节课
+                card.onclick = () => recordClass(student.id);
+
+                // 构建卡片内部HTML
+                let innerHTML = `
+                    <div class="student-name">${student.name}</div>
+                    <div class="student-count">总计: ${student.dates.length} 节</div>
+                `;
+
+                // 如果今天有课时记录，显示具体次数和撤回按钮
+                if (todayCount > 0) {
+                    innerHTML += `
+                        <div class="today-info">今日已上: ${todayCount} 节</div>
+                        <button class="btn-undo" onclick="undoClass(${student.id}, event)">撤回一次</button>
+                    `;
                 }
 
-                card.innerHTML = `
-                    <div class="student-name">${student.name}</div>
-                    <div class="student-count">总计: ${student.dates.length} 节课<br>${isCheckedToday ? '(今日已记)' : ''}</div>
-                `;
-                
+                card.innerHTML = innerHTML;
                 grid.appendChild(card);
             });
         }
 
-        // 导出数据为 CSV 格式 (可用 Excel 直接打开)
+        // 导出数据
         function exportData() {
             if (students.length === 0) {
                 alert("当前没有数据可导出！");
                 return;
             }
 
-            // 添加 BOM 头，防止 Excel 打开 CSV 时中文乱码
             let csvContent = "\uFEFF姓名,总课时,上课日期明细\n";
 
             students.forEach(student => {
+                // 如果同一天上了多节课，日期明细中会重复显示，以保证数量对齐
                 const datesStr = student.dates.join('; ');
                 csvContent += `${student.name},${student.dates.length},"${datesStr}"\n`;
             });
 
-            // 触发下载
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement("a");
             const url = URL.createObjectURL(blob);
