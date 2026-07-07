@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学生课时记录系统</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            padding: 20px;
+            max-width: 900px;
+            margin: 0 auto;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        h2 {
+            text-align: center;
+            color: #2c3e50;
+        }
+        .header-controls {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .add-group {
+            display: flex;
+            gap: 10px;
+        }
+        input[type="text"] {
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            outline: none;
+        }
+        button {
+            padding: 10px 16px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            transition: opacity 0.2s;
+        }
+        button:hover {
+            opacity: 0.85;
+        }
+        .btn-add {
+            background-color: #0d6efd;
+            color: white;
+        }
+        .btn-export {
+            background-color: #198754;
+            color: white;
+        }
+        /* 针对大班级优化的网格布局 */
+        .student-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .student-card {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 15px 10px;
+            text-align: center;
+            cursor: pointer;
+            user-select: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: all 0.2s ease-in-out;
+        }
+        .student-card:active {
+            transform: scale(0.95);
+        }
+        .student-card.checked {
+            background-color: #d1e7dd;
+            border-color: #a3cfbb;
+            pointer-events: none; /* 今天已点名，禁止重复点击 */
+        }
+        .student-name {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .student-count {
+            font-size: 12px;
+            color: #6c757d;
+        }
+        .student-card.checked .student-count {
+            color: #0f5132;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>🏃‍♂️ 课时记录系统</h2>
+    
+    <div class="header-controls">
+        <div class="add-group">
+            <input type="text" id="studentName" placeholder="输入学生姓名" onkeypress="handleKeyPress(event)">
+            <button class="btn-add" onclick="addStudent()">添加学生</button>
+        </div>
+        <button class="btn-export" onclick="exportData()">📊 导出Excel数据</button>
+    </div>
+
+    <div class="student-grid" id="studentGrid">
+        </div>
+
+    <script>
+        // 核心数据结构: [{ id: 1, name: "张三", dates: ["2023/10/25", "2023/10/26"] }]
+        let students = JSON.parse(localStorage.getItem('pe_class_data')) || [];
+
+        // 获取今天的日期 (格式: YYYY/M/D)
+        function getTodayString() {
+            return new Date().toLocaleDateString('zh-CN');
+        }
+
+        // 保存数据到浏览器本地
+        function saveData() {
+            localStorage.setItem('pe_class_data', JSON.stringify(students));
+        }
+
+        // 添加学生
+        function addStudent() {
+            const input = document.getElementById('studentName');
+            const name = input.value.trim();
+            
+            if (!name) {
+                alert("请输入学生姓名！");
+                return;
+            }
+
+            // 检查是否重名
+            if (students.some(s => s.name === name)) {
+                alert("该学生已存在！");
+                return;
+            }
+
+            students.push({
+                id: Date.now(), // 用时间戳作为唯一ID
+                name: name,
+                dates: [] // 记录上课日期的数组
+            });
+
+            input.value = '';
+            saveData();
+            renderGrid();
+        }
+
+        // 支持回车键添加
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') {
+                addStudent();
+            }
+        }
+
+        // 记录课时 (点击卡片触发)
+        function recordClass(id) {
+            const student = students.find(s => s.id === id);
+            if (!student) return;
+
+            const today = getTodayString();
+            
+            // 防止同一天重复记录
+            if (!student.dates.includes(today)) {
+                student.dates.push(today);
+                saveData();
+                renderGrid();
+            }
+        }
+
+        // 渲染主界面
+        function renderGrid() {
+            const grid = document.getElementById('studentGrid');
+            grid.innerHTML = '';
+            
+            const today = getTodayString();
+
+            students.forEach(student => {
+                const card = document.createElement('div');
+                const isCheckedToday = student.dates.includes(today);
+                
+                card.className = `student-card ${isCheckedToday ? 'checked' : ''}`;
+                // 如果今天没打卡，才绑定点击事件
+                if (!isCheckedToday) {
+                    card.onclick = () => recordClass(student.id);
+                }
+
+                card.innerHTML = `
+                    <div class="student-name">${student.name}</div>
+                    <div class="student-count">总计: ${student.dates.length} 节课<br>${isCheckedToday ? '(今日已记)' : ''}</div>
+                `;
+                
+                grid.appendChild(card);
+            });
+        }
+
+        // 导出数据为 CSV 格式 (可用 Excel 直接打开)
+        function exportData() {
+            if (students.length === 0) {
+                alert("当前没有数据可导出！");
+                return;
+            }
+
+            // 添加 BOM 头，防止 Excel 打开 CSV 时中文乱码
+            let csvContent = "\uFEFF姓名,总课时,上课日期明细\n";
+
+            students.forEach(student => {
+                const datesStr = student.dates.join('; ');
+                csvContent += `${student.name},${student.dates.length},"${datesStr}"\n`;
+            });
+
+            // 触发下载
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            
+            link.setAttribute("href", url);
+            link.setAttribute("download", `课时统计_${getTodayString().replace(/\//g, '-')}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // 初始化渲染
+        renderGrid();
+    </script>
+</body>
+</html>
